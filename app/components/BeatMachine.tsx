@@ -296,7 +296,7 @@ export default function BeatMachine() {
           </div>
 
           {/* Producify and Export */}
-          <div className="flex gap-4 pt-4 border-t border-gray-700">
+          <div className={`flex gap-4 pt-4 border-t ${theme.accent}`}>
             <button
               onClick={handleProducify}
               disabled={aiProcessing}
