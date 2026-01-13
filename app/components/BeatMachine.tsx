@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Track, Theme, BeatMachineState } from '../types';
 import { TRACK_NAMES, INITIAL_DISABLED_TRACKS } from '../types';
 import { audioEngine } from '../utils/audioEngine';
@@ -28,7 +28,7 @@ export default function BeatMachine() {
   const [exportEnabled, setExportEnabled] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const stepDuration = (60 / state.tempo) * 1000 / 2; // Convert BPM to ms per 16th note
+  const stepDuration = useMemo(() => (60 / state.tempo) * 1000 / 2, [state.tempo]); // Convert BPM to ms per 16th note
 
   const toggleStep = useCallback((trackId: number, stepIndex: number) => {
     setState(prev => ({
@@ -89,9 +89,13 @@ export default function BeatMachine() {
     const newTempo = parseInt(e.target.value);
     setState(prev => ({ ...prev, tempo: newTempo }));
     
+    // If playing, restart the sequencer with new tempo
     if (state.isPlaying) {
       stopSequencer();
-      setTimeout(() => startSequencer(), 50);
+      // Use requestAnimationFrame to ensure clean restart after state update
+      requestAnimationFrame(() => {
+        startSequencer();
+      });
     }
   };
 
