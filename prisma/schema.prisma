@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Composition {
+  id          String   @id @default(cuid())
+  name        String
+  tempo       Int      @default(120)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  patterns    Pattern[]
+}
+
+model Pattern {
+  id            String      @id @default(cuid())
+  compositionId String
+  composition   Composition @relation(fields: [compositionId], references: [id], onDelete: Cascade)
+  trackName     String
+  steps         Json        // Array of 8 boolean values
+  enabled       Boolean     @default(true)
+  aiGenerated   Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  @@index([compositionId])
+}
