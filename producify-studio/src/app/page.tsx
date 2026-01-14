@@ -161,7 +161,7 @@ export default function HomePage() {
           idx = 0;
           playingSequenceIndexRef.current = 0;
           setPlayingSequenceIndex(0);
-          engineRef.current?.setPattern({ ...seqs[0], bpm });
+          engineRef.current?.setPattern(seqs[0]);
         }
 
         setActiveStep(step);
@@ -170,7 +170,7 @@ export default function HomePage() {
           const nextIdx = (idx + 1) % seqs.length;
           playingSequenceIndexRef.current = nextIdx;
           setPlayingSequenceIndex(nextIdx);
-          engineRef.current?.setPattern({ ...seqs[nextIdx], bpm });
+          engineRef.current?.setPattern(seqs[nextIdx]);
         }
       }
     });
@@ -183,7 +183,12 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!engineRef.current) return;
-    if (playModeRef.current === "all") return; // play-all manages its own sequence switching
+    if (playModeRef.current === "all") {
+      // In play-all mode we only adjust BPM here; sequence switching
+      // is handled inside the audio callback.
+      engineRef.current.setBpm(bpm);
+      return;
+    }
     engineRef.current.setPattern({ ...pattern, bpm });
   }, [pattern, bpm]);
 
