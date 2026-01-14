@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { defaultPattern } from "@/lib/defaultPattern";
 import { Pattern, STEPS, Track, TrackId } from "@/lib/types";
 import { createAudioEngine } from "@/lib/audioEngine";
-import { patternToMidi, midiToBase64 } from "@/lib/midiExport";
+import { patternToMidi, midiToBase64, sequencesToMidi } from "@/lib/midiExport";
 import { saveAs } from "file-saver";
 import { PianoRoll } from "@/components/PianoRoll";
 
@@ -247,8 +247,11 @@ export default function HomePage() {
     }
   }
 
-  function exportMidi(filename: string) {
-    const midi = patternToMidi(pattern);
+  function exportSong(filename: string) {
+    const midi = sequencesToMidi(
+      sequences.map((seq) => ({ ...seq, bpm })),
+      bpm
+    );
     const bytes = midi.toArray();
     const blob = new Blob([new Uint8Array(bytes)], { type: "audio/midi" });
     saveAs(blob, filename);
@@ -298,23 +301,49 @@ export default function HomePage() {
   }
 
   return (
-    <div style={{ padding: 18, fontFamily: "ui-sans-serif, system-ui" }}>
-      <h1 style={{ fontSize: 22, marginBottom: 8 }}>Producify Studio (v1)</h1>
-      <p style={{ marginTop: 0, opacity: 0.75 }}>
-        8-step sequencer → export MIDI → Producify (AI adds orchestration
-        tracks) → export final MIDI
-      </p>
+    <div
+      style={{
+        padding: 16,
+        fontFamily: "ui-sans-serif, system-ui",
+        maxWidth: 1100,
+        margin: "0 auto 32px auto",
+        color: "var(--text-primary)",
+      }}
+    >
+      <h1
+        style={{
+          fontSize: 24,
+          marginBottom: 6,
+          fontWeight: 700,
+          letterSpacing: 0.4,
+        }}
+      >
+        Producify Studio (v1)
+      </h1>
 
       {/* Sequences control */}
       <div
         style={{
           margin: "8px 0 14px 0",
           padding: 10,
-          border: "1px solid #e5e5e5",
+          border: "1px solid var(--border-subtle)",
           borderRadius: 10,
+          background: "var(--background-elevated)",
+          boxShadow: "0 14px 45px rgba(0,0,0,0.45)",
         }}
       >
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Sequences</div>
+        <div
+          style={{
+            fontWeight: 600,
+            marginBottom: 6,
+            fontSize: 13,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+            color: "var(--accent-purple)",
+          }}
+        >
+          Sequences
+        </div>
         <div
           style={{
             display: "flex",
@@ -326,7 +355,14 @@ export default function HomePage() {
           <button
             onClick={() => setCurrentSequenceIndex((i) => Math.max(0, i - 1))}
             disabled={currentSequenceIndex === 0}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--background-elevated-soft)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
           >
             ◀ Prev
           </button>
@@ -340,7 +376,14 @@ export default function HomePage() {
               )
             }
             disabled={currentSequenceIndex >= sequences.length - 1}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--background-elevated-soft)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
           >
             Next ▶
           </button>
@@ -359,7 +402,14 @@ export default function HomePage() {
               setCurrentSequenceIndex((i) => i - 1);
             }}
             disabled={currentSequenceIndex === 0}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--background-elevated-soft)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
           >
             Slide ◀
           </button>
@@ -378,7 +428,14 @@ export default function HomePage() {
               setCurrentSequenceIndex((i) => i + 1);
             }}
             disabled={currentSequenceIndex >= sequences.length - 1}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--background-elevated-soft)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
           >
             Slide ▶
           </button>
@@ -403,7 +460,15 @@ export default function HomePage() {
               });
               setCurrentSequenceIndex((i) => i + 1);
             }}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--accent-purple)",
+              border: "1px solid var(--accent-violet)",
+              color: "white",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
           >
             + After
           </button>
@@ -432,7 +497,14 @@ export default function HomePage() {
                 return next;
               });
             }}
-            style={{ padding: "4px 8px" }}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "transparent",
+              border: "1px solid var(--danger)",
+              color: "var(--danger)",
+              fontSize: 12,
+            }}
             disabled={sequences.length === 1}
           >
             Delete
@@ -440,104 +512,216 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Time controls */}
       <div
         style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          flexWrap: "wrap",
-          margin: "12px 0",
+          margin: "0 0 10px 0",
+          padding: 10,
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 10,
+          background: "var(--background-elevated)",
+          boxShadow: "0 14px 45px rgba(0,0,0,0.35)",
         }}
       >
-        <button onClick={handlePlaySequence} style={{ padding: "8px 12px" }}>
-          {isPlayingSequence ? "Stop Seq" : "Play Seq"}
-        </button>
-
-        <button onClick={handlePlayAll} style={{ padding: "8px 12px" }}>
-          {isPlayingAll ? "Stop All" : "Play All"}
-        </button>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Tempo
-          <input
-            type="range"
-            min={60}
-            max={180}
-            value={bpm}
-            onChange={(e) => setGlobalBpm(Number(e.target.value))}
-          />
-          <span style={{ width: 36 }}>{bpm}</span>
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Metronome
-          <input
-            type="checkbox"
-            checked={pattern.metronomeOn}
-            onChange={(e) =>
-              setPatternForCurrent((p) => ({
-                ...p,
-                metronomeOn: e.target.checked,
-              }))
-            }
-          />
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Metro Vol
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={pattern.metronomeVolume}
-            onChange={(e) =>
-              setPatternForCurrent((p) => ({
-                ...p,
-                metronomeVolume: Number(e.target.value),
-              }))
-            }
-          />
-        </label>
+        <div
+          style={{
+            fontWeight: 600,
+            marginBottom: 6,
+            fontSize: 13,
+            textTransform: "uppercase",
+            letterSpacing: 1,
+            color: "var(--accent-blue)",
+          }}
+        >
+          Time Controls
+        </div>
 
         <div
           style={{
-            width: 120,
-            height: 10,
-            border: "1px solid #ccc",
-            borderRadius: 6,
-            overflow: "hidden",
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
           }}
         >
-          <div
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            Tempo
+            <input
+              type="range"
+              min={60}
+              max={180}
+              value={bpm}
+              onChange={(e) => setGlobalBpm(Number(e.target.value))}
+            />
+            <span
+              style={{
+                width: 40,
+                fontVariantNumeric: "tabular-nums",
+                color: "var(--accent-blue)",
+              }}
+            >
+              {bpm}
+            </span>
+          </label>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            Metronome
+            <input
+              type="checkbox"
+              checked={pattern.metronomeOn}
+              onChange={(e) =>
+                setPatternForCurrent((p) => ({
+                  ...p,
+                  metronomeOn: e.target.checked,
+                }))
+              }
+            />
+          </label>
+
+          {pattern.metronomeOn && (
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              Metro Vol
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={pattern.metronomeVolume}
+                onChange={(e) =>
+                  setPatternForCurrent((p) => ({
+                    ...p,
+                    metronomeVolume: Number(e.target.value),
+                  }))
+                }
+              />
+            </label>
+          )}
+
+          <div style={{ marginLeft: "auto", opacity: 0.7 }}>
+            <div
+              style={{
+                width: 70,
+                height: 6,
+                borderRadius: 999,
+                background: "var(--background-subtle)",
+                marginTop: 2,
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  borderRadius: 999,
+                  background: "var(--accent-blue-neon)",
+                  width: `${Math.min(1, metroLevel) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          flexWrap: "wrap",
+          margin: "10px 0 14px 0",
+        }}
+      >
+        {/* Left cluster: play */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={handlePlaySequence}
             style={{
-              width: `${Math.round(metroLevel * 100)}%`,
-              height: "100%",
+              padding: "6px 12px",
+              fontWeight: 600,
+              borderRadius: 999,
+              border: "1px solid var(--border-strong)",
+              background: isPlayingSequence
+                ? "var(--accent-purple)"
+                : "var(--background-elevated-soft)",
+              color: "white",
+              fontSize: 13,
             }}
-          />
+          >
+            {isPlayingSequence ? "Stop Seq" : "Play Seq"}
+          </button>
+
+          <button
+            onClick={handlePlayAll}
+            style={{
+              padding: "6px 12px",
+              fontWeight: 600,
+              borderRadius: 999,
+              border: "1px solid var(--border-strong)",
+              background: isPlayingAll
+                ? "var(--accent-violet)"
+                : "var(--background-elevated-soft)",
+              color: "white",
+              fontSize: 13,
+            }}
+          >
+            {isPlayingAll ? "Stop All" : "Play All"}
+          </button>
         </div>
 
-        <button
-          onClick={() => exportMidi("pattern.mid")}
-          style={{ padding: "8px 12px" }}
+        {/* Right cluster: Producify call-to-action */}
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            textAlign: "right",
+          }}
         >
-          Export MIDI
-        </button>
+          <span
+            style={{
+              fontSize: 12,
+              opacity: 0.8,
+              maxWidth: 260,
+            }}
+          >
+            All done? Sprinkle on some AI orchestration -
+          </span>
 
-        <button
-          onClick={producify}
-          disabled={busy}
-          style={{ padding: "8px 12px" }}
-        >
-          {busy ? "Producifying…" : "Producify"}
-        </button>
+          <button
+            onClick={producify}
+            disabled={busy}
+            style={{
+              padding: "6px 14px",
+              fontWeight: 700,
+              borderRadius: 999,
+              border: "1px solid var(--accent-blue-neon)",
+              background:
+                "radial-gradient(circle at 0 0, rgba(56,189,248,0.35), transparent 55%), #020617",
+              color: "#e0f2fe",
+              textShadow: "0 0 8px rgba(56,189,248,0.75)",
+              boxShadow:
+                "0 0 0 1px rgba(56,189,248,0.45), 0 0 20px rgba(56,189,248,0.55)",
+              fontSize: 13,
+              letterSpacing: 0.4,
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy ? "Producifying…" : "Producify"}
+          </button>
 
-        <button
-          onClick={() => exportMidi("final.mid")}
-          style={{ padding: "8px 12px" }}
-        >
-          Export Final MIDI
-        </button>
+          <button
+            onClick={() => exportSong("song.mid")}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid var(--border-subtle)",
+              background: "var(--background-elevated-soft)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}
+          >
+            Export Song
+          </button>
+        </div>
       </div>
 
       {aiNote && (
@@ -545,8 +729,10 @@ export default function HomePage() {
           style={{
             marginBottom: 12,
             padding: 10,
-            border: "1px solid #ddd",
+            border: "1px solid var(--border-subtle)",
             borderRadius: 10,
+            background: "var(--background-elevated)",
+            color: "var(--text-muted)",
           }}
         >
           <strong>AI:</strong> {aiNote}
@@ -555,9 +741,10 @@ export default function HomePage() {
 
       <div
         style={{
-          border: "1px solid #e5e5e5",
+          border: "1px solid var(--border-subtle)",
           borderRadius: 12,
           overflow: "hidden",
+          background: "var(--background-elevated)",
         }}
       >
         {/* Header row */}
@@ -565,7 +752,7 @@ export default function HomePage() {
           style={{
             display: "grid",
             gridTemplateColumns: "180px repeat(8, 1fr)",
-            background: "#fafafa",
+            background: "var(--background-elevated-soft)",
           }}
         >
           <div style={{ padding: 10, fontWeight: 600 }}>Track</div>
@@ -589,12 +776,12 @@ export default function HomePage() {
               style={{
                 display: "grid",
                 gridTemplateColumns: "180px repeat(8, 1fr)",
-                borderTop: "1px solid #eee",
+                borderTop: "1px solid var(--border-subtle)",
                 opacity: t.enabled ? 1 : 0.45,
                 background: isSelected
-                  ? "rgba(59,130,246,0.06)" // subtle blue highlight for selected track
+                  ? "rgba(129,140,248,0.16)"
                   : isAITrack(t.id)
-                  ? "rgba(0,0,0,0.02)"
+                  ? "rgba(15,23,42,0.5)"
                   : "transparent",
               }}
             >
@@ -610,7 +797,9 @@ export default function HomePage() {
                 <span>
                   {trackLabel(t.id)}{" "}
                   {isAITrack(t.id) ? (
-                    <em style={{ opacity: 0.65 }}>(AI)</em>
+                    <em style={{ opacity: 0.7, color: "var(--accent-violet)" }}>
+                      (AI)
+                    </em>
                   ) : null}
                 </span>
                 <div
@@ -642,7 +831,7 @@ export default function HomePage() {
                           volume: Number(e.target.value),
                         }))
                       }
-                      style={{ width: 70 }}
+                      style={{ width: 56 }}
                     />
                   </label>
                   <button
@@ -652,7 +841,20 @@ export default function HomePage() {
                         (tr) => ({ ...tr, enabled: !tr.enabled } as any)
                       )
                     }
-                    style={{ padding: "2px 8px" }}
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      border: t.enabled
+                        ? "1px solid var(--accent-blue)"
+                        : "1px solid var(--border-subtle)",
+                      background: t.enabled
+                        ? "rgba(59,130,246,0.18)"
+                        : "var(--background-elevated-soft)",
+                      color: t.enabled
+                        ? "var(--accent-blue)"
+                        : "var(--text-muted)",
+                      fontSize: 11,
+                    }}
                     disabled={isAITrack(t.id) && !t.enabled} // keep disabled until AI fills, per your spec
                     title={
                       isAITrack(t.id) && !t.enabled
@@ -683,10 +885,27 @@ export default function HomePage() {
                     style={{
                       height: 44,
                       border: "none",
-                      borderLeft: "1px solid #eee",
+                      borderLeft: "1px solid var(--border-subtle)",
                       cursor: t.enabled ? "pointer" : "not-allowed",
-                      outline: isActive ? "2px solid rgba(0,0,0,0.2)" : "none",
+                      outline: "none",
                       opacity: filled ? 1 : 0.25,
+                      background: isActive
+                        ? "var(--accent-violet)"
+                        : filled
+                        ? isAITrack(t.id)
+                          ? "rgba(52,211,153,0.9)"
+                          : "rgba(59,130,246,0.9)"
+                        : "transparent",
+                      color: filled ? "#020617" : "var(--text-subtle)",
+                      fontSize: 20,
+                      transition:
+                        "background 80ms ease-out, transform 60ms, box-shadow 80ms ease-out",
+                      transform: isActive ? "scale(1.05)" : "scale(1)",
+                      boxShadow: isActive
+                        ? "0 0 0 1px rgba(168,85,247,0.75), 0 0 16px rgba(168,85,247,0.7)"
+                        : filled
+                        ? "0 0 0 1px rgba(15,23,42,0.75)"
+                        : "none",
                     }}
                     title={
                       t.kind === "pitched" && t.steps[stepIdx]
@@ -713,11 +932,6 @@ export default function HomePage() {
           setOctave={setRollOctave}
         />
       </div>
-
-      <p style={{ marginTop: 12, opacity: 0.75 }}>
-        Tip: Select a pitched track, then use the piano roll below to set notes
-        for any step. Drum tracks still edit directly in the grid.
-      </p>
     </div>
   );
 }
