@@ -40,6 +40,9 @@ export type Pattern = {
   metronomeOn: boolean;
   metronomeVolume: number; // 0..1
   tracks: Track[];
+  // Optional UI / arrangement metadata
+  loopCount?: number; // how many times this 8-step sequence repeats when arranging/playing/exporting
+  sequenceColorIndex?: number; // stable color slot so colors follow sequences when reordering
 };
 
 export const STEPS = 8;

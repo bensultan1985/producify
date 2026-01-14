@@ -18,6 +18,8 @@ export const defaultPattern: Pattern = {
   swing: 0,
   metronomeOn: false,
   metronomeVolume: 0.5,
+  loopCount: 1,
+  sequenceColorIndex: 0,
   tracks: [
     drum("kick", true),
     drum("snare", true),

@@ -9,6 +9,27 @@ import { saveAs } from "file-saver";
 import { PianoRoll } from "@/components/PianoRoll";
 
 const STORAGE_KEY = "producify_projects_v1";
+const MAX_SEQUENCES = 16;
+const MAX_TOTAL_UNITS = 64; // 8-step sequences
+
+const SEQUENCE_COLORS = [
+  "#22d3ee", // cyan
+  "#f97316", // orange
+  "#a855f7", // purple
+  "#22c55e", // green
+  "#e11d48", // rose
+  "#14b8a6", // teal
+  "#facc15", // yellow
+  "#ec4899", // pink
+  "#0ea5e9", // sky
+  "#f59e0b", // amber
+  "#8b5cf6", // violet
+  "#10b981", // emerald
+  "#fb7185", // soft red
+  "#2dd4bf", // aqua
+  "#f472b6", // light pink
+  "#38bdf8", // light sky
+];
 
 type ProjectData = {
   sequences: Pattern[];
@@ -117,6 +138,14 @@ export default function HomePage() {
   const [selectedTrackId, setSelectedTrackId] = useState<TrackId | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [rollOctave, setRollOctave] = useState<number>(4); // shows C4..B4
+  const [dragSeqIndex, setDragSeqIndex] = useState<number | null>(null);
+  const [dragInsertIndex, setDragInsertIndex] = useState<number | null>(null);
+
+  const loopDragRef = useRef<{
+    index: number;
+    startX: number;
+    startLoop: number;
+  } | null>(null);
 
   // Beta file system state
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
@@ -135,6 +164,7 @@ export default function HomePage() {
   const playingSequenceIndexRef = useRef<number | null>(null);
   const sequencesRef = useRef<Pattern[]>(sequences);
   const currentSequenceIndexRef = useRef<number>(currentSequenceIndex);
+  const loopRemainingRef = useRef<number>(1);
 
   // Metronome meter
   const [metroLevel, setMetroLevel] = useState(0);
@@ -161,16 +191,29 @@ export default function HomePage() {
           idx = 0;
           playingSequenceIndexRef.current = 0;
           setPlayingSequenceIndex(0);
-          engineRef.current?.setPattern(seqs[0]);
+          const first = seqs[0];
+          const loops = Math.max(1, first.loopCount ?? 1);
+          loopRemainingRef.current = loops;
+          engineRef.current?.setPattern(first);
         }
 
         setActiveStep(step);
 
         if (step === STEPS - 1) {
+          const remaining = (loopRemainingRef.current ?? 1) - 1;
+          if (remaining > 0) {
+            loopRemainingRef.current = remaining;
+            return;
+          }
+
           const nextIdx = (idx + 1) % seqs.length;
           playingSequenceIndexRef.current = nextIdx;
           setPlayingSequenceIndex(nextIdx);
-          engineRef.current?.setPattern(seqs[nextIdx]);
+
+          const nextPattern = seqs[nextIdx];
+          const nextLoops = Math.max(1, nextPattern.loopCount ?? 1);
+          loopRemainingRef.current = nextLoops;
+          engineRef.current?.setPattern(nextPattern);
         }
       }
     });
@@ -220,6 +263,46 @@ export default function HomePage() {
     currentSequenceIndexRef.current = currentSequenceIndex;
   }, [currentSequenceIndex]);
 
+  // Global mouse handlers for adjusting loop counts by dragging the right edge
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const state = loopDragRef.current;
+      if (!state) return;
+      const dx = e.clientX - state.startX;
+      const deltaUnits = Math.round(dx / 40); // ~40px per sequence-length
+      const target = state.startLoop + deltaUnits;
+
+      setSequences((seqs) => {
+        const next = seqs.slice();
+        const current = next[state.index];
+        if (!current) return seqs;
+
+        const othersTotal = next.reduce((sum, p, i) => {
+          if (i === state.index) return sum;
+          return sum + Math.max(1, p.loopCount ?? 1);
+        }, 0);
+
+        let newLoop = Math.max(1, target);
+        const maxForThis = Math.max(1, MAX_TOTAL_UNITS - othersTotal);
+        newLoop = Math.min(newLoop, maxForThis);
+
+        next[state.index] = { ...current, loopCount: newLoop };
+        return next;
+      });
+    }
+
+    function onUp() {
+      loopDragRef.current = null;
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [setSequences]);
+
   // Focus & select default name when opening the Save dialog
   useEffect(() => {
     if (showSaveDialog && saveInputRef.current) {
@@ -231,6 +314,28 @@ export default function HomePage() {
   const isPlayingSequence = playMode === "sequence";
   const isPlayingAll = playMode === "all";
   const isPlaying = playMode !== null;
+
+  const totalUnits = sequences.reduce(
+    (sum, p) => sum + Math.max(1, p.loopCount ?? 1),
+    0
+  );
+  const canAddSequence =
+    sequences.length < MAX_SEQUENCES && totalUnits < MAX_TOTAL_UNITS;
+  const currentLoopCount = Math.max(
+    1,
+    sequences[currentSequenceIndex]?.loopCount ?? 1
+  );
+  const canCopyCurrent =
+    canAddSequence && totalUnits + currentLoopCount <= MAX_TOTAL_UNITS;
+
+  const currentSequence = sequences[currentSequenceIndex] ?? sequences[0];
+  const currentSequenceColorIndex =
+    typeof currentSequence?.sequenceColorIndex === "number"
+      ? currentSequence.sequenceColorIndex
+      : currentSequenceIndex % SEQUENCE_COLORS.length;
+  const currentSequenceColor =
+    SEQUENCE_COLORS[currentSequenceColorIndex % SEQUENCE_COLORS.length] ||
+    "var(--accent-violet)";
 
   function handleNewProject() {
     if (engineRef.current) {
@@ -355,7 +460,10 @@ export default function HomePage() {
     const seqs = sequencesRef.current;
     if (!seqs.length) return;
 
-    engineRef.current.setPattern({ ...seqs[0], bpm });
+    const first = seqs[0];
+    const loops = Math.max(1, first.loopCount ?? 1);
+    loopRemainingRef.current = loops;
+    engineRef.current.setPattern({ ...first, bpm });
     await engineRef.current.start();
     setPlayMode("all");
     setPlayingSequenceIndex(0);
@@ -421,6 +529,23 @@ export default function HomePage() {
       setRollOctave(Math.max(0, Math.min(8, oct)));
     }
   }
+
+  // Ensure each sequence has a stable color index so colors move with
+  // the sequence when reordering.
+  useEffect(() => {
+    setSequences((prev) => {
+      let changed = false;
+      const next = prev.map((seq, idx) => {
+        if (typeof seq.sequenceColorIndex === "number") return seq;
+        changed = true;
+        return {
+          ...seq,
+          sequenceColorIndex: idx % SEQUENCE_COLORS.length,
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [sequences]);
 
   function exportSong(filename: string) {
     const midi = sequencesToMidi(
@@ -632,168 +757,423 @@ export default function HomePage() {
         <div
           style={{
             display: "flex",
-            gap: 8,
             alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 6,
+            gap: 8,
             flexWrap: "wrap",
           }}
         >
-          <button
-            onClick={() => setCurrentSequenceIndex((i) => Math.max(0, i - 1))}
-            disabled={currentSequenceIndex === 0}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "var(--background-elevated-soft)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-primary)",
-              fontSize: 12,
-            }}
-          >
-            ◀ Prev
-          </button>
-          <div>
-            Seq {currentSequenceIndex + 1} / {sequences.length}
+          <div style={{ fontSize: 11, opacity: 0.7 }}>
+            Drag blocks to reorder. Drag right edge to loop.
           </div>
-          <button
-            onClick={() =>
-              setCurrentSequenceIndex((i) =>
-                Math.min(sequences.length - 1, i + 1)
-              )
-            }
-            disabled={currentSequenceIndex >= sequences.length - 1}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "var(--background-elevated-soft)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-primary)",
-              fontSize: 12,
-            }}
-          >
-            Next ▶
-          </button>
 
-          <button
-            onClick={() => {
-              if (currentSequenceIndex === 0) return;
-              setSequences((seqs) => {
-                const next = seqs.slice();
-                const i = currentSequenceIndex;
-                const tmp = next[i - 1];
-                next[i - 1] = next[i];
-                next[i] = tmp;
-                return next;
-              });
-              setCurrentSequenceIndex((i) => i - 1);
-            }}
-            disabled={currentSequenceIndex === 0}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "var(--background-elevated-soft)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-primary)",
-              fontSize: 12,
-            }}
-          >
-            Slide ◀
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => {
+                if (!canAddSequence) return;
+                setSequences((seqs) => {
+                  if (seqs.length >= MAX_SEQUENCES) return seqs;
+                  const total = seqs.reduce(
+                    (sum, p) => sum + Math.max(1, p.loopCount ?? 1),
+                    0
+                  );
+                  if (total >= MAX_TOTAL_UNITS) return seqs;
 
-          <button
-            onClick={() => {
-              if (currentSequenceIndex >= sequences.length - 1) return;
-              setSequences((seqs) => {
-                const next = seqs.slice();
-                const i = currentSequenceIndex;
-                const tmp = next[i + 1];
-                next[i + 1] = next[i];
-                next[i] = tmp;
-                return next;
-              });
-              setCurrentSequenceIndex((i) => i + 1);
-            }}
-            disabled={currentSequenceIndex >= sequences.length - 1}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "var(--background-elevated-soft)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-primary)",
-              fontSize: 12,
-            }}
-          >
-            Slide ▶
-          </button>
-
-          <button
-            onClick={() => {
-              setSequences((seqs) => {
-                const curr = seqs[currentSequenceIndex] ?? seqs[0];
-                const insertIndex = currentSequenceIndex + 1;
-                const blankTracks = curr.tracks.map((t) =>
-                  t.kind === "drum"
-                    ? { ...t, steps: Array(STEPS).fill(0) }
-                    : { ...t, steps: Array(STEPS).fill(null) }
-                );
-                const newSeq: Pattern = { ...curr, tracks: blankTracks };
-                const next = [
-                  ...seqs.slice(0, insertIndex),
-                  newSeq,
-                  ...seqs.slice(insertIndex),
-                ];
-                return next;
-              });
-              setCurrentSequenceIndex((i) => i + 1);
-            }}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "var(--accent-purple)",
-              border: "1px solid var(--accent-violet)",
-              color: "white",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            + After
-          </button>
-
-          <button
-            onClick={() => {
-              setSequences((seqs) => {
-                if (seqs.length === 1) {
-                  const only = seqs[0];
-                  const clearedTracks = only.tracks.map((t) =>
+                  const curr = seqs[currentSequenceIndex] ?? seqs[0];
+                  const insertIndex = currentSequenceIndex + 1;
+                  const blankTracks = curr.tracks.map((t) =>
                     t.kind === "drum"
                       ? { ...t, steps: Array(STEPS).fill(0) }
                       : { ...t, steps: Array(STEPS).fill(null) }
                   );
-                  return [{ ...only, tracks: clearedTracks }];
-                }
-                const next = [
-                  ...seqs.slice(0, currentSequenceIndex),
-                  ...seqs.slice(currentSequenceIndex + 1),
-                ];
-                const newIndex = Math.min(
-                  currentSequenceIndex,
-                  next.length - 1
-                );
-                setCurrentSequenceIndex(newIndex);
+                  // Assign a fresh neon color index for this new sequence
+                  const usedColorIndices = seqs.map((s, i) =>
+                    typeof s.sequenceColorIndex === "number"
+                      ? s.sequenceColorIndex
+                      : i % SEQUENCE_COLORS.length
+                  );
+                  const maxExisting =
+                    usedColorIndices.length > 0
+                      ? Math.max(...usedColorIndices)
+                      : -1;
+                  const colorIndex = (maxExisting + 1) % SEQUENCE_COLORS.length;
+                  const newSeq: Pattern = {
+                    ...curr,
+                    tracks: blankTracks,
+                    loopCount: 1,
+                    sequenceColorIndex: colorIndex,
+                  };
+                  const next = [
+                    ...seqs.slice(0, insertIndex),
+                    newSeq,
+                    ...seqs.slice(insertIndex),
+                  ];
+                  return next;
+                });
+                setCurrentSequenceIndex((i) => i + 1);
+              }}
+              style={{
+                padding: "5px 12px",
+                borderRadius: 999,
+                background:
+                  "radial-gradient(circle at 0 0, rgba(168,85,247,0.45), transparent 55%), rgba(76,29,149,0.95)",
+                border: "1px solid rgba(168,85,247,0.95)",
+                color: "white",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                boxShadow:
+                  "0 0 0 1px rgba(76,29,149,0.6), 0 0 10px rgba(129,140,248,0.35)",
+              }}
+              disabled={!canAddSequence}
+            >
+              ＋ New
+            </button>
+
+            <button
+              onClick={() => {
+                if (!canCopyCurrent) return;
+                setSequences((seqs) => {
+                  if (seqs.length >= MAX_SEQUENCES) return seqs;
+                  const curr = seqs[currentSequenceIndex] ?? seqs[0];
+
+                  const total = seqs.reduce(
+                    (sum, p) => sum + Math.max(1, p.loopCount ?? 1),
+                    0
+                  );
+                  const loops = Math.max(1, curr.loopCount ?? 1);
+                  if (total + loops > MAX_TOTAL_UNITS) return seqs;
+
+                  const insertIndex = currentSequenceIndex + 1;
+                  const copiedTracks = curr.tracks.map((t) =>
+                    t.kind === "drum"
+                      ? { ...t, steps: [...t.steps] }
+                      : { ...t, steps: [...t.steps] }
+                  );
+                  const newSeq: Pattern = {
+                    ...curr,
+                    tracks: copiedTracks,
+                  };
+
+                  const next = [
+                    ...seqs.slice(0, insertIndex),
+                    newSeq,
+                    ...seqs.slice(insertIndex),
+                  ];
+                  return next;
+                });
+                setCurrentSequenceIndex((i) => i + 1);
+              }}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "var(--background-elevated-soft)",
+                border: "1px solid rgba(148,163,184,0.85)",
+                color: "var(--text-primary)",
+                boxShadow:
+                  "0 0 0 1px rgba(15,23,42,0.55), 0 0 6px rgba(15,23,42,0.4)",
+                fontSize: 12,
+              }}
+              disabled={!canCopyCurrent}
+            >
+              ⧉ Copy
+            </button>
+
+            <button
+              onClick={() => {
+                setSequences((seqs) => {
+                  if (seqs.length === 1) {
+                    const only = seqs[0];
+                    const clearedTracks = only.tracks.map((t) =>
+                      t.kind === "drum"
+                        ? { ...t, steps: Array(STEPS).fill(0) }
+                        : { ...t, steps: Array(STEPS).fill(null) }
+                    );
+                    return [{ ...only, tracks: clearedTracks }];
+                  }
+                  const next = [
+                    ...seqs.slice(0, currentSequenceIndex),
+                    ...seqs.slice(currentSequenceIndex + 1),
+                  ];
+                  const newIndex = Math.min(
+                    currentSequenceIndex,
+                    next.length - 1
+                  );
+                  setCurrentSequenceIndex(newIndex);
+                  return next;
+                });
+              }}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "rgba(248,113,113,0.08)",
+                border: "1px solid rgba(248,113,113,0.95)",
+                color: "rgba(248,113,113,0.96)",
+                boxShadow:
+                  "0 0 0 1px rgba(127,29,29,0.6), 0 0 8px rgba(248,113,113,0.35)",
+                fontSize: 12,
+              }}
+              disabled={sequences.length === 1}
+            >
+              ✕ Delete
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "stretch",
+          }}
+        >
+          {/* Leading drop zone (before first sequence) */}
+          <div
+            onDragOver={(e) => {
+              if (dragSeqIndex == null) return;
+              e.preventDefault();
+              if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = "move";
+              }
+              setDragInsertIndex(0);
+            }}
+            onDragLeave={() => {
+              if (dragInsertIndex === 0) {
+                setDragInsertIndex(null);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragSeqIndex == null) return;
+              const from = dragSeqIndex;
+              const to = 0;
+              if (from === to) {
+                setDragInsertIndex(null);
+                return;
+              }
+              setSequences((seqs) => {
+                const next = seqs.slice();
+                const [moved] = next.splice(from, 1);
+                next.splice(to, 0, moved);
                 return next;
               });
+              setCurrentSequenceIndex((prev) => {
+                if (prev === from) return to;
+                if (from < to && prev > from && prev <= to) return prev - 1;
+                if (from > to && prev >= to && prev < from) return prev + 1;
+                return prev;
+              });
+              setDragSeqIndex(null);
+              setDragInsertIndex(null);
             }}
             style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: "transparent",
-              border: "1px solid var(--danger)",
-              color: "var(--danger)",
-              fontSize: 12,
+              display: "flex",
+              alignItems: "stretch",
+              justifyContent: "center",
+              width: dragInsertIndex === 0 ? 14 : 6,
+              transition: "width 80ms ease-out, background 80ms ease-out",
             }}
-            disabled={sequences.length === 1}
           >
-            Delete
-          </button>
+            <div
+              style={{
+                width: 2,
+                borderRadius: 999,
+                background:
+                  dragInsertIndex === 0
+                    ? "rgba(255,255,255,0.9)"
+                    : "transparent",
+              }}
+            />
+          </div>
+
+          {sequences.map((seq, idx) => {
+            const isCurrent = idx === currentSequenceIndex;
+            const isBeingPlayed = isPlaying && idx === playingSequenceIndex;
+
+            const loopCount = Math.max(1, seq.loopCount ?? 1);
+            const baseWidth = 70;
+            const widthPerLoop = 35; // lengthen visibly as loops increase
+            const blockWidth = baseWidth + (loopCount - 1) * widthPerLoop;
+            const colorIndex =
+              typeof seq.sequenceColorIndex === "number"
+                ? seq.sequenceColorIndex
+                : idx % SEQUENCE_COLORS.length;
+            const color =
+              SEQUENCE_COLORS[colorIndex % SEQUENCE_COLORS.length] ||
+              "var(--accent-violet)";
+
+            const baseBorderWidth = isBeingPlayed ? 2 : 1;
+            const baseBorderColor =
+              isBeingPlayed || isCurrent ? color : "var(--border-subtle)";
+            const loopIconBg = "#ffffff";
+            const loopIconBorder =
+              loopCount > 1 ? `${color}bb` : "rgba(148,163,184,0.9)";
+            const loopIconShadow =
+              loopCount > 1
+                ? `0 0 0 1px ${color}aa, 0 0 10px ${color}88`
+                : "0 0 0 1px rgba(15,23,42,0.45)";
+
+            return (
+              <React.Fragment key={idx}>
+                <div
+                  draggable
+                  onDragStart={(e) => {
+                    setDragSeqIndex(idx);
+                    if (e.dataTransfer) {
+                      e.dataTransfer.effectAllowed = "move";
+                      // Some browsers (e.g. Safari) require data to be set
+                      // for drag-and-drop events to properly fire drops.
+                      e.dataTransfer.setData("text/plain", String(idx));
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDragSeqIndex(null);
+                    setDragInsertIndex(null);
+                  }}
+                  onClick={() => setCurrentSequenceIndex(idx)}
+                  style={{
+                    minWidth: blockWidth,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    borderStyle: "solid",
+                    borderColor: baseBorderColor,
+                    borderWidth: baseBorderWidth,
+                    background: isCurrent ? `${color}66` : `${color}40`,
+                    color: "var(--text-primary)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    boxShadow: isBeingPlayed
+                      ? `0 0 0 1px ${color}cc, 0 0 18px ${color}b3`
+                      : isCurrent
+                      ? `0 0 0 1px ${color}aa, 0 0 10px ${color}66`
+                      : `0 0 0 1px rgba(15,23,42,0.65), 0 0 10px ${color}33`,
+                    userSelect: "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {/* Left: loop count */}
+                    {loopCount > 1 && (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.8,
+                        }}
+                      >
+                        x{loopCount}
+                      </span>
+                    )}
+
+                    {/* Right: loop drag icon, pushed to the far right */}
+                    <div
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        loopDragRef.current = {
+                          index: idx,
+                          startX: e.clientX,
+                          startLoop: loopCount,
+                        };
+                      }}
+                      className={
+                        loopCount > 1
+                          ? "seq-loop-icon seq-loop-icon--active"
+                          : "seq-loop-icon"
+                      }
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 999,
+                        border: `1px solid ${loopIconBorder}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginLeft: "auto",
+                        cursor: "ew-resize",
+                        color,
+                        background: loopIconBg,
+                        boxShadow: loopIconShadow,
+                        fontSize: 20,
+                        fontWeight: 900,
+                        lineHeight: 0.85,
+                      }}
+                    >
+                      ⟲
+                    </div>
+                  </div>
+                </div>
+
+                {/* Drop zone after this sequence (insert after idx) */}
+                <div
+                  onDragOver={(e) => {
+                    if (dragSeqIndex == null) return;
+                    e.preventDefault();
+                    if (e.dataTransfer) {
+                      e.dataTransfer.dropEffect = "move";
+                    }
+                    setDragInsertIndex(idx + 1);
+                  }}
+                  onDragLeave={() => {
+                    if (dragInsertIndex === idx + 1) {
+                      setDragInsertIndex(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragSeqIndex == null) return;
+                    const from = dragSeqIndex;
+                    let to = idx + 1;
+                    if (from < to) to -= 1;
+                    if (from === to) {
+                      setDragInsertIndex(null);
+                      return;
+                    }
+                    setSequences((seqs) => {
+                      const next = seqs.slice();
+                      const [moved] = next.splice(from, 1);
+                      next.splice(to, 0, moved);
+                      return next;
+                    });
+                    setCurrentSequenceIndex((prev) => {
+                      if (prev === from) return to;
+                      if (from < to && prev > from && prev <= to)
+                        return prev - 1;
+                      if (from > to && prev >= to && prev < from)
+                        return prev + 1;
+                      return prev;
+                    });
+                    setDragSeqIndex(null);
+                    setDragInsertIndex(null);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "stretch",
+                    justifyContent: "center",
+                    width: dragInsertIndex === idx + 1 ? 14 : 6,
+                    transition: "width 80ms ease-out, background 80ms ease-out",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 2,
+                      borderRadius: 999,
+                      background:
+                        dragInsertIndex === idx + 1
+                          ? "rgba(255,255,255,0.9)"
+                          : "transparent",
+                    }}
+                  />
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
@@ -912,6 +1292,11 @@ export default function HomePage() {
           alignItems: "center",
           flexWrap: "wrap",
           margin: "10px 0 14px 0",
+          padding: 10,
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 10,
+          background: "var(--background-elevated)",
+          boxShadow: "0 14px 45px rgba(0,0,0,0.3)",
         }}
       >
         {/* Left cluster: play */}
@@ -1257,6 +1642,10 @@ export default function HomePage() {
             display: "grid",
             gridTemplateColumns: "180px repeat(8, 1fr)",
             background: "var(--background-elevated-soft)",
+            margin: "-2px -2px  -2px",
+            border: `2px solid ${currentSequenceColor}`,
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 12,
           }}
         >
           <div style={{ padding: 10, fontWeight: 600 }}>Track</div>
@@ -1274,6 +1663,17 @@ export default function HomePage() {
         {pattern.tracks.map((t) => {
           const isSelected = t.id === selectedTrackId;
 
+          const playingSeq =
+            playingSequenceIndex != null
+              ? sequences[playingSequenceIndex] ?? null
+              : null;
+          const playingColor =
+            playingSeq && typeof playingSeq.sequenceColorIndex === "number"
+              ? SEQUENCE_COLORS[
+                  playingSeq.sequenceColorIndex % SEQUENCE_COLORS.length
+                ] || "var(--accent-violet)"
+              : "var(--accent-violet)";
+
           return (
             <div
               key={t.id}
@@ -1282,6 +1682,7 @@ export default function HomePage() {
                 gridTemplateColumns: "180px repeat(8, 1fr)",
                 borderTop: "1px solid var(--border-subtle)",
                 opacity: t.enabled ? 1 : 0.45,
+                minHeight: 64,
                 background: isSelected
                   ? "rgba(129,140,248,0.16)"
                   : isAITrack(t.id)
@@ -1322,7 +1723,6 @@ export default function HomePage() {
                       fontSize: 11,
                     }}
                   >
-                    Vol
                     <input
                       type="range"
                       min={0}
@@ -1363,10 +1763,12 @@ export default function HomePage() {
                     title={
                       isAITrack(t.id) && !t.enabled
                         ? "Unlocked by Producify"
-                        : "Toggle track"
+                        : t.enabled
+                        ? "Mute track"
+                        : "Unmute track"
                     }
                   >
-                    {t.enabled ? "On" : "Off"}
+                    M
                   </button>
                 </div>
               </div>
@@ -1387,28 +1789,29 @@ export default function HomePage() {
                     onClick={() => toggleStep(t, stepIdx)}
                     disabled={!t.enabled}
                     style={{
-                      height: 44,
+                      height: "100%",
+                      width: "100%",
                       border: "none",
                       borderLeft: "1px solid var(--border-subtle)",
                       cursor: t.enabled ? "pointer" : "not-allowed",
                       outline: "none",
                       opacity: filled ? 1 : 0.25,
                       background: isActive
-                        ? "var(--accent-violet)"
+                        ? playingColor
                         : filled
                         ? isAITrack(t.id)
                           ? "rgba(52,211,153,0.9)"
                           : "rgba(59,130,246,0.9)"
                         : "transparent",
                       color: filled ? "#020617" : "var(--text-subtle)",
-                      fontSize: 20,
+                      fontSize: 0,
                       transition:
-                        "background 80ms ease-out, transform 60ms, box-shadow 80ms ease-out",
+                        "background 140ms ease-out, transform 60ms, box-shadow 180ms ease-out",
                       transform: isActive ? "scale(1.05)" : "scale(1)",
                       boxShadow: isActive
                         ? "0 0 0 1px rgba(168,85,247,0.75), 0 0 16px rgba(168,85,247,0.7)"
                         : filled
-                        ? "0 0 0 1px rgba(15,23,42,0.75)"
+                        ? "0 0 0 1px rgba(15,23,42,0.7), 0 0 12px rgba(59,130,246,0.55)"
                         : "none",
                     }}
                     title={
@@ -1417,7 +1820,7 @@ export default function HomePage() {
                         : ""
                     }
                   >
-                    {filled ? "●" : "·"}
+                    {" "}
                   </button>
                 );
               })}
