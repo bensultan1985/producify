@@ -8,6 +8,72 @@ import { patternToMidi, midiToBase64, sequencesToMidi } from "@/lib/midiExport";
 import { saveAs } from "file-saver";
 import { PianoRoll } from "@/components/PianoRoll";
 
+const STORAGE_KEY = "producify_projects_v1";
+
+type ProjectData = {
+  sequences: Pattern[];
+  bpm: number;
+  currentSequenceIndex: number;
+};
+
+type SavedProject = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  data: ProjectData;
+};
+
+const EMOTIONS = [
+  "hyper",
+  "dreamy",
+  "moody",
+  "shimmer",
+  "velvet",
+  "restless",
+  "golden",
+  "neon",
+];
+
+const ANIMALS = [
+  "owl",
+  "tiger",
+  "panda",
+  "panther",
+  "lynx",
+  "raven",
+  "fox",
+  "whale",
+];
+
+function generateDefaultProjectName() {
+  const e = EMOTIONS[Math.floor(Math.random() * EMOTIONS.length)] ?? "hyper";
+  const a = ANIMALS[Math.floor(Math.random() * ANIMALS.length)] ?? "owl";
+  return `${e}_${a}`;
+}
+
+function getStoredProjects(): SavedProject[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as SavedProject[];
+  } catch {
+    return [];
+  }
+}
+
+function setStoredProjects(projects: SavedProject[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  } catch {
+    // ignore quota or serialization errors in this beta file system
+  }
+}
+
 function trackLabel(id: TrackId) {
   const map: Record<string, string> = {
     kick: "Kick",
@@ -51,6 +117,18 @@ export default function HomePage() {
   const [selectedTrackId, setSelectedTrackId] = useState<TrackId | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [rollOctave, setRollOctave] = useState<number>(4); // shows C4..B4
+
+  // Beta file system state
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [currentProjectName, setCurrentProjectName] = useState<string | null>(
+    null
+  );
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const saveInputRef = useRef<HTMLInputElement | null>(null);
+  const [showOpenDialog, setShowOpenDialog] = useState(false);
+  const [openProjects, setOpenProjects] = useState<SavedProject[]>([]);
 
   const engineRef = useRef<ReturnType<typeof createAudioEngine> | null>(null);
   const playModeRef = useRef<"sequence" | "all" | null>(null);
@@ -137,9 +215,101 @@ export default function HomePage() {
     currentSequenceIndexRef.current = currentSequenceIndex;
   }, [currentSequenceIndex]);
 
+  // Focus & select default name when opening the Save dialog
+  useEffect(() => {
+    if (showSaveDialog && saveInputRef.current) {
+      saveInputRef.current.focus();
+      saveInputRef.current.select();
+    }
+  }, [showSaveDialog]);
+
   const isPlayingSequence = playMode === "sequence";
   const isPlayingAll = playMode === "all";
   const isPlaying = playMode !== null;
+
+  function handleNewProject() {
+    if (engineRef.current) {
+      engineRef.current.stop();
+    }
+    setPlayMode(null);
+    setPlayingSequenceIndex(null);
+    setActiveStep(0);
+    setAiNote("");
+    setSequences([defaultPattern]);
+    setCurrentSequenceIndex(0);
+    setBpm(defaultPattern.bpm);
+    setCurrentProjectId(null);
+    setCurrentProjectName(null);
+    setFileMenuOpen(false);
+  }
+
+  function handleOpenClick() {
+    const projects = getStoredProjects();
+    setOpenProjects(projects);
+    setShowOpenDialog(true);
+    setFileMenuOpen(false);
+  }
+
+  function handleSaveClick() {
+    const baseName = currentProjectName ?? generateDefaultProjectName();
+    setSaveName(baseName);
+    setShowSaveDialog(true);
+    setFileMenuOpen(false);
+  }
+
+  function handleConfirmSave() {
+    if (typeof window === "undefined") return;
+    const name = (saveName || generateDefaultProjectName()).trim();
+    const now = new Date().toISOString();
+    const data: ProjectData = {
+      sequences,
+      bpm,
+      currentSequenceIndex,
+    };
+
+    const existing = getStoredProjects();
+    let updated: SavedProject[];
+
+    if (currentProjectId) {
+      updated = existing.map((p) =>
+        p.id === currentProjectId ? { ...p, name, updatedAt: now, data } : p
+      );
+    } else {
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const proj: SavedProject = {
+        id,
+        name,
+        createdAt: now,
+        updatedAt: now,
+        data,
+      };
+      updated = [...existing, proj];
+      setCurrentProjectId(id);
+    }
+
+    setStoredProjects(updated);
+    setCurrentProjectName(name);
+    setShowSaveDialog(false);
+  }
+
+  function handleOpenProject(p: SavedProject) {
+    if (engineRef.current) {
+      engineRef.current.stop();
+    }
+    setPlayMode(null);
+    setPlayingSequenceIndex(null);
+    setActiveStep(0);
+    setAiNote("");
+    setSequences(p.data.sequences ?? [defaultPattern]);
+    setCurrentSequenceIndex(p.data.currentSequenceIndex ?? 0);
+    setBpm(p.data.bpm ?? defaultPattern.bpm);
+    setCurrentProjectId(p.id);
+    setCurrentProjectName(p.name);
+    setShowOpenDialog(false);
+  }
 
   async function handlePlaySequence() {
     if (!engineRef.current) return;
@@ -310,6 +480,116 @@ export default function HomePage() {
         color: "var(--text-primary)",
       }}
     >
+      {/* File menu / beta file system */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}
+      >
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setFileMenuOpen((v) => !v)}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--border-subtle)",
+              background: "var(--background-elevated-soft)",
+              color: "var(--text-primary)",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            File ▾
+          </button>
+          {fileMenuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "110%",
+                left: 0,
+                minWidth: 140,
+                borderRadius: 8,
+                border: "1px solid var(--border-subtle)",
+                background: "var(--background-elevated)",
+                boxShadow: "0 18px 45px rgba(0,0,0,0.55)",
+                padding: 4,
+                zIndex: 20,
+              }}
+            >
+              <button
+                onClick={handleNewProject}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "6px 8px",
+                  border: "none",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                New
+              </button>
+              <button
+                onClick={handleOpenClick}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "6px 8px",
+                  border: "none",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Open…
+              </button>
+              <button
+                onClick={handleSaveClick}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "6px 8px",
+                  border: "none",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Save…
+              </button>
+            </div>
+          )}
+        </div>
+
+        {currentProjectName && (
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.8,
+              maxWidth: 260,
+              textAlign: "right",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            Project: {currentProjectName}
+          </div>
+        )}
+      </div>
       <h1
         style={{
           fontSize: 24,
@@ -723,6 +1003,225 @@ export default function HomePage() {
           </button>
         </div>
       </div>
+
+      {/* Open dialog */}
+      {showOpenDialog && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 40,
+          }}
+        >
+          <div
+            style={{
+              minWidth: 360,
+              maxWidth: 520,
+              maxHeight: "70vh",
+              overflow: "auto",
+              background: "var(--background-elevated)",
+              borderRadius: 12,
+              border: "1px solid var(--border-subtle)",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.75)",
+              padding: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>Open Song</div>
+              <button
+                onClick={() => setShowOpenDialog(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--text-subtle)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {openProjects.length === 0 ? (
+              <div style={{ fontSize: 13, opacity: 0.8 }}>
+                No saved songs yet. Use Save to create one.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  marginTop: 4,
+                }}
+              >
+                {openProjects.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleOpenProject(p)}
+                    style={{
+                      textAlign: "left",
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid var(--border-subtle)",
+                      background: "var(--background-elevated-soft)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        marginBottom: 2,
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        opacity: 0.8,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                      }}
+                    >
+                      <span>
+                        Created: {new Date(p.createdAt).toLocaleString()}
+                      </span>
+                      <span>
+                        Modified: {new Date(p.updatedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Save dialog */}
+      {showSaveDialog && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 40,
+          }}
+        >
+          <div
+            style={{
+              minWidth: 320,
+              maxWidth: 420,
+              background: "var(--background-elevated)",
+              borderRadius: 12,
+              border: "1px solid var(--border-subtle)",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.75)",
+              padding: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>Save Song</div>
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--text-subtle)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                fontSize: 13,
+              }}
+            >
+              File name
+              <input
+                ref={saveInputRef}
+                type="text"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                style={{
+                  padding: "6px 8px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-subtle)",
+                  background: "var(--background-elevated-soft)",
+                  color: "var(--text-primary)",
+                }}
+              />
+            </label>
+
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid var(--border-subtle)",
+                  background: "var(--background-elevated-soft)",
+                  color: "var(--text-primary)",
+                  fontSize: 12,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  border: "1px solid var(--accent-blue)",
+                  background: "rgba(59,130,246,0.2)",
+                  color: "var(--accent-blue)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {aiNote && (
         <div
