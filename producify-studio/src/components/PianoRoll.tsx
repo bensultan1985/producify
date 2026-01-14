@@ -124,9 +124,10 @@ export function PianoRoll({
     <div
       style={{
         marginTop: 14,
-        border: "1px solid #e5e5e5",
+        border: "1px solid var(--border-subtle)",
         borderRadius: 12,
         overflow: "hidden",
+        background: "var(--background-elevated)",
       }}
     >
       {/* Header (clickable) */}
@@ -135,8 +136,8 @@ export function PianoRoll({
         style={{
           width: "100%",
           textAlign: "left",
-          padding: "10px 12px",
-          background: "#fafafa",
+          padding: "8px 12px",
+          background: "var(--background-elevated-soft)",
           border: "none",
           cursor: "pointer",
           display: "flex",
@@ -150,12 +151,12 @@ export function PianoRoll({
       </button>
 
       {open && (
-        <div style={{ padding: 12 }}>
+        <div style={{ padding: 10 }}>
           {/* Controls */}
           <div
             style={{
               display: "flex",
-              gap: 10,
+              gap: 8,
               alignItems: "center",
               flexWrap: "wrap",
             }}
@@ -171,7 +172,7 @@ export function PianoRoll({
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <button
                 onClick={() => setOctave(clamp(octave - 1, 0, 8))}
-                style={{ padding: "6px 10px" }}
+                style={{ padding: "4px 9px" }}
               >
                 − Oct
               </button>
@@ -180,7 +181,7 @@ export function PianoRoll({
               </div>
               <button
                 onClick={() => setOctave(clamp(octave + 1, 0, 8))}
-                style={{ padding: "6px 10px" }}
+                style={{ padding: "4px 9px" }}
               >
                 + Oct
               </button>
@@ -189,7 +190,7 @@ export function PianoRoll({
             <button
               onClick={clearNote}
               disabled={!canEditTrack || selectedStep === null}
-              style={{ padding: "6px 10px" }}
+              style={{ padding: "4px 9px" }}
             >
               Clear Step
             </button>
@@ -211,8 +212,8 @@ export function PianoRoll({
           {/* Grid: 12 rows (one octave) x 8 columns (steps) */}
           <div
             style={{
-              marginTop: 12,
-              border: "1px solid #eee",
+              marginTop: 10,
+              border: "1px solid var(--border-subtle)",
               borderRadius: 10,
               overflow: "hidden",
             }}
@@ -221,8 +222,8 @@ export function PianoRoll({
               style={{
                 display: "grid",
                 gridTemplateColumns: "110px repeat(8, 1fr)",
-                background: "#fcfcfc",
-                borderBottom: "1px solid #eee",
+                background: "var(--background-elevated-soft)",
+                borderBottom: "1px solid var(--border-subtle)",
               }}
             >
               <div style={{ padding: 10, fontWeight: 600 }}>Note</div>
@@ -251,8 +252,10 @@ export function PianoRoll({
                   style={{
                     display: "grid",
                     gridTemplateColumns: "110px repeat(8, 1fr)",
-                    borderTop: "1px solid #f0f0f0",
-                    background: isBlack ? "rgba(0,0,0,0.03)" : "transparent",
+                    borderTop: "1px solid var(--border-subtle)",
+                    background: isBlack
+                      ? "rgba(15,23,42,0.9)"
+                      : "var(--background-elevated)",
                   }}
                 >
                   <div
@@ -286,13 +289,26 @@ export function PianoRoll({
                         style={{
                           height: 38,
                           border: "none",
-                          borderLeft: "1px solid #eee",
+                          borderLeft: "1px solid var(--border-subtle)",
                           cursor: canEditTrack ? "pointer" : "not-allowed",
                           opacity: canEditTrack ? 1 : 0.25,
-                          outline: isCellActive
-                            ? "2px solid rgba(0,0,0,0.25)"
-                            : "none",
+                          outline: "none",
                           fontWeight: isCellActive ? 700 : 400,
+                          background: isCellActive
+                            ? "var(--accent-violet)"
+                            : noteHere
+                            ? "rgba(59,130,246,0.9)"
+                            : "transparent",
+                          color: noteHere ? "#020617" : "var(--text-subtle)",
+                          fontSize: 16,
+                          transition:
+                            "background 80ms ease-out, transform 60ms, box-shadow 80ms ease-out",
+                          transform: isCellActive ? "scale(1.04)" : "scale(1)",
+                          boxShadow: isCellActive
+                            ? "0 0 0 1px rgba(168,85,247,0.75), 0 0 14px rgba(168,85,247,0.7)"
+                            : noteHere
+                            ? "0 0 0 1px rgba(15,23,42,0.75)"
+                            : "none",
                         }}
                       >
                         {noteHere ? "●" : "·"}
@@ -303,11 +319,6 @@ export function PianoRoll({
               );
             })}
           </div>
-
-          <p style={{ marginTop: 10, opacity: 0.75 }}>
-            Select a pitched track, then click anywhere in this piano roll to
-            set notes per step. Next upgrade is drag-to-paint across steps.
-          </p>
         </div>
       )}
     </div>

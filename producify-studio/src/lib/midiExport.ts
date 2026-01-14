@@ -72,6 +72,90 @@ export function patternToMidi(pattern: Pattern): Midi {
   return m;
 }
 
+// Combine multiple 8-step patterns (sequences) into a single MIDI song.
+// Each sequence is placed back-to-back in time using the shared BPM.
+export function sequencesToMidi(
+  sequences: Pattern[],
+  bpmOverride?: number
+): Midi {
+  const m = new Midi();
+  if (!sequences.length) return m;
+
+  const bpm = bpmOverride ?? sequences[0].bpm;
+  m.header.setTempo(bpm);
+
+  // Reuse a single track per logical instrument across all sequences.
+  const drumNoteMap: Record<string, number> = {
+    kick: 36,
+    snare: 38,
+    hihat: 42,
+    crash: 49,
+    toms: 45,
+  };
+
+  const drumTracks = new Map<string, any>();
+  const pitchedTracks = new Map<string, any>();
+
+  sequences.forEach((pattern, seqIndex) => {
+    const baseStepOffset = seqIndex * STEPS;
+
+    for (const tr of pattern.tracks) {
+      if (!tr.enabled) continue;
+
+      if (tr.kind === "drum") {
+        const midiNote = drumNoteMap[tr.id];
+        if (midiNote == null) continue;
+
+        let t = drumTracks.get(tr.id);
+        if (!t) {
+          t = m.addTrack();
+          t.name = tr.id;
+          t.channel = 9; // GM drum channel (10 in 1-based)
+          drumTracks.set(tr.id, t);
+        }
+
+        for (let i = 0; i < tr.steps.length; i++) {
+          if (!tr.steps[i]) continue;
+          const step = baseStepOffset + i;
+          t.addNote({
+            midi: midiNote,
+            time: stepToTimeSeconds(step, bpm),
+            duration: 0.05,
+            velocity: 0.8,
+          });
+        }
+      } else {
+        let t = pitchedTracks.get(tr.id);
+        if (!t) {
+          t = m.addTrack();
+          t.name = tr.id;
+          pitchedTracks.set(tr.id, t);
+        }
+
+        for (let i = 0; i < tr.steps.length; i++) {
+          const note: any = tr.steps[i];
+          if (!note) continue;
+
+          const durSteps = note.durSteps ?? 1;
+          const startStep = baseStepOffset + i;
+          const endStep = startStep + durSteps;
+          const start = stepToTimeSeconds(startStep, bpm);
+          const end = stepToTimeSeconds(endStep, bpm);
+
+          t.addNote({
+            midi: note.midi,
+            time: start,
+            duration: Math.max(0.05, end - start),
+            velocity: note.vel ?? 0.8,
+          });
+        }
+      }
+    }
+  });
+
+  return m;
+}
+
 export function midiToBase64(m: Midi): string {
   const bytes = m.toArray();
   const bin = String.fromCharCode(...bytes);
