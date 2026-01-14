@@ -1007,6 +1007,13 @@ export default function HomePage() {
             const baseBorderWidth = isBeingPlayed ? 2 : 1;
             const baseBorderColor =
               isBeingPlayed || isCurrent ? color : "var(--border-subtle)";
+            const loopIconBg = "#ffffff";
+            const loopIconBorder =
+              loopCount > 1 ? `${color}bb` : "rgba(148,163,184,0.9)";
+            const loopIconShadow =
+              loopCount > 1
+                ? `0 0 0 1px ${color}aa, 0 0 10px ${color}88`
+                : "0 0 0 1px rgba(15,23,42,0.45)";
 
             return (
               <React.Fragment key={idx}>
@@ -1033,17 +1040,15 @@ export default function HomePage() {
                     borderStyle: "solid",
                     borderColor: baseBorderColor,
                     borderWidth: baseBorderWidth,
-                    background: isCurrent
-                      ? `${color}22`
-                      : "var(--background-elevated-soft)",
+                    background: isCurrent ? `${color}66` : `${color}40`,
                     color: "var(--text-primary)",
                     fontSize: 12,
                     cursor: "pointer",
                     boxShadow: isBeingPlayed
                       ? `0 0 0 1px ${color}cc, 0 0 18px ${color}b3`
                       : isCurrent
-                      ? `0 0 0 1px ${color}99`
-                      : "none",
+                      ? `0 0 0 1px ${color}aa, 0 0 10px ${color}66`
+                      : `0 0 0 1px rgba(15,23,42,0.65), 0 0 10px ${color}33`,
                     userSelect: "none",
                   }}
                 >
@@ -1083,16 +1088,21 @@ export default function HomePage() {
                           : "seq-loop-icon"
                       }
                       style={{
-                        width: 18,
-                        height: 18,
+                        width: 20,
+                        height: 20,
                         borderRadius: 999,
-                        border: `1px solid ${color}55`,
+                        border: `1px solid ${loopIconBorder}`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         marginLeft: "auto",
                         cursor: "ew-resize",
                         color,
+                        background: loopIconBg,
+                        boxShadow: loopIconShadow,
+                        fontSize: 20,
+                        fontWeight: 900,
+                        lineHeight: 0.85,
                       }}
                     >
                       ⟲
@@ -1672,6 +1682,7 @@ export default function HomePage() {
                 gridTemplateColumns: "180px repeat(8, 1fr)",
                 borderTop: "1px solid var(--border-subtle)",
                 opacity: t.enabled ? 1 : 0.45,
+                minHeight: 64,
                 background: isSelected
                   ? "rgba(129,140,248,0.16)"
                   : isAITrack(t.id)
@@ -1712,7 +1723,6 @@ export default function HomePage() {
                       fontSize: 11,
                     }}
                   >
-                    Vol
                     <input
                       type="range"
                       min={0}
@@ -1753,10 +1763,12 @@ export default function HomePage() {
                     title={
                       isAITrack(t.id) && !t.enabled
                         ? "Unlocked by Producify"
-                        : "Toggle track"
+                        : t.enabled
+                        ? "Mute track"
+                        : "Unmute track"
                     }
                   >
-                    {t.enabled ? "On" : "Off"}
+                    M
                   </button>
                 </div>
               </div>
@@ -1777,7 +1789,8 @@ export default function HomePage() {
                     onClick={() => toggleStep(t, stepIdx)}
                     disabled={!t.enabled}
                     style={{
-                      height: 44,
+                      height: "100%",
+                      width: "100%",
                       border: "none",
                       borderLeft: "1px solid var(--border-subtle)",
                       cursor: t.enabled ? "pointer" : "not-allowed",
@@ -1791,14 +1804,14 @@ export default function HomePage() {
                           : "rgba(59,130,246,0.9)"
                         : "transparent",
                       color: filled ? "#020617" : "var(--text-subtle)",
-                      fontSize: 20,
+                      fontSize: 0,
                       transition:
-                        "background 80ms ease-out, transform 60ms, box-shadow 80ms ease-out",
+                        "background 140ms ease-out, transform 60ms, box-shadow 180ms ease-out",
                       transform: isActive ? "scale(1.05)" : "scale(1)",
                       boxShadow: isActive
                         ? "0 0 0 1px rgba(168,85,247,0.75), 0 0 16px rgba(168,85,247,0.7)"
                         : filled
-                        ? "0 0 0 1px rgba(15,23,42,0.75)"
+                        ? "0 0 0 1px rgba(15,23,42,0.7), 0 0 12px rgba(59,130,246,0.55)"
                         : "none",
                     }}
                     title={
@@ -1807,7 +1820,7 @@ export default function HomePage() {
                         : ""
                     }
                   >
-                    {filled ? "●" : "·"}
+                    {" "}
                   </button>
                 );
               })}
