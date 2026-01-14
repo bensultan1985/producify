@@ -1,6 +1,8 @@
 import { Midi } from "@tonejs/midi";
 import { Pattern, STEPS, Track } from "./types";
 
+const MAX_TOTAL_UNITS = 64; // max total length in 8-step sequences
+
 function stepToTimeSeconds(stepIdx: number, bpm: number): number {
   // "8n" = half a beat in 4/4 (since quarter note = 1 beat)
   const secondsPerBeat = 60 / bpm;
@@ -96,60 +98,70 @@ export function sequencesToMidi(
   const drumTracks = new Map<string, any>();
   const pitchedTracks = new Map<string, any>();
 
-  sequences.forEach((pattern, seqIndex) => {
-    const baseStepOffset = seqIndex * STEPS;
+  let usedUnits = 0;
 
-    for (const tr of pattern.tracks) {
-      if (!tr.enabled) continue;
+  sequences.forEach((pattern) => {
+    const loops = Math.max(1, pattern.loopCount ?? 1);
 
-      if (tr.kind === "drum") {
-        const midiNote = drumNoteMap[tr.id];
-        if (midiNote == null) continue;
+    for (let loopIndex = 0; loopIndex < loops; loopIndex++) {
+      if (usedUnits >= MAX_TOTAL_UNITS) return;
 
-        let t = drumTracks.get(tr.id);
-        if (!t) {
-          t = m.addTrack();
-          t.name = tr.id;
-          t.channel = 9; // GM drum channel (10 in 1-based)
-          drumTracks.set(tr.id, t);
-        }
+      const baseStepOffset = usedUnits * STEPS;
 
-        for (let i = 0; i < tr.steps.length; i++) {
-          if (!tr.steps[i]) continue;
-          const step = baseStepOffset + i;
-          t.addNote({
-            midi: midiNote,
-            time: stepToTimeSeconds(step, bpm),
-            duration: 0.05,
-            velocity: 0.8,
-          });
-        }
-      } else {
-        let t = pitchedTracks.get(tr.id);
-        if (!t) {
-          t = m.addTrack();
-          t.name = tr.id;
-          pitchedTracks.set(tr.id, t);
-        }
+      for (const tr of pattern.tracks) {
+        if (!tr.enabled) continue;
 
-        for (let i = 0; i < tr.steps.length; i++) {
-          const note: any = tr.steps[i];
-          if (!note) continue;
+        if (tr.kind === "drum") {
+          const midiNote = drumNoteMap[tr.id];
+          if (midiNote == null) continue;
 
-          const durSteps = note.durSteps ?? 1;
-          const startStep = baseStepOffset + i;
-          const endStep = startStep + durSteps;
-          const start = stepToTimeSeconds(startStep, bpm);
-          const end = stepToTimeSeconds(endStep, bpm);
+          let t = drumTracks.get(tr.id);
+          if (!t) {
+            t = m.addTrack();
+            t.name = tr.id;
+            t.channel = 9; // GM drum channel (10 in 1-based)
+            drumTracks.set(tr.id, t);
+          }
 
-          t.addNote({
-            midi: note.midi,
-            time: start,
-            duration: Math.max(0.05, end - start),
-            velocity: note.vel ?? 0.8,
-          });
+          for (let i = 0; i < tr.steps.length; i++) {
+            if (!tr.steps[i]) continue;
+            const step = baseStepOffset + i;
+            t.addNote({
+              midi: midiNote,
+              time: stepToTimeSeconds(step, bpm),
+              duration: 0.05,
+              velocity: 0.8,
+            });
+          }
+        } else {
+          let t = pitchedTracks.get(tr.id);
+          if (!t) {
+            t = m.addTrack();
+            t.name = tr.id;
+            pitchedTracks.set(tr.id, t);
+          }
+
+          for (let i = 0; i < tr.steps.length; i++) {
+            const note: any = tr.steps[i];
+            if (!note) continue;
+
+            const durSteps = note.durSteps ?? 1;
+            const startStep = baseStepOffset + i;
+            const endStep = startStep + durSteps;
+            const start = stepToTimeSeconds(startStep, bpm);
+            const end = stepToTimeSeconds(endStep, bpm);
+
+            t.addNote({
+              midi: note.midi,
+              time: start,
+              duration: Math.max(0.05, end - start),
+              velocity: note.vel ?? 0.8,
+            });
+          }
         }
       }
+
+      usedUnits++;
     }
   });
 
